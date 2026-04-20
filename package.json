@@ -1,0 +1,57 @@
+{
+  "name": "ai-compliance-engine",
+  "version": "1.0.0",
+  "description": "AI-Powered Compliance Engine — Enterprise-grade RAG-based compliance auditing system",
+  "main": "dist/api/server.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/api/server.ts",
+    "start": "node dist/api/server.js",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src tests --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed.ts"
+  },
+  "keywords": [
+    "compliance",
+    "security",
+    "ai",
+    "rag",
+    "cis",
+    "nist",
+    "iso27001"
+  ],
+  "author": "Raphael",
+  "license": "ISC",
+  "dependencies": {
+    "@fastify/multipart": "^10.0.0",
+    "@fastify/swagger": "^9.5.0",
+    "@fastify/swagger-ui": "^5.2.2",
+    "bullmq": "^5.47.0",
+    "fastify": "^5.2.2",
+    "mammoth": "^1.12.0",
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.14.1",
+    "pino": "^9.6.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.23.0",
+    "@types/node": "^22.13.14",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/pg": "^8.11.11",
+    "dotenv": "^17.3.1",
+    "eslint": "^9.23.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.28.0",
+    "vitest": "^3.0.9"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

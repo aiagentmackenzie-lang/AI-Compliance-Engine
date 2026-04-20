@@ -1,0 +1,16 @@
+apiVersion: v2
+name: ai-compliance-engine
+description: AI-Powered Compliance Engine - Enterprise-grade RAG-based compliance auditing
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - compliance
+  - security
+  - ai
+  - rag
+home: https://github.com/aiagentmackenzie-lang/ai-compliance-engine
+sources:
+  - https://github.com/aiagentmackenzie-lang/ai-compliance-engine
+maintainers:
+  - name: Security Engineering Team

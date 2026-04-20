@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ai-compliance-engine.fullname" . }}-config
+  labels:
+    {{- include "ai-compliance-engine.labels" . | nindent 4 }}
+data:
+  NODE_ENV: {{ .Values.config.nodeEnv | quote }}
+  PORT: "3000"
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  DATABASE_POOL_SIZE: {{ .Values.config.database.poolSize | quote }}
+  RATE_LIMIT_REQUESTS: {{ .Values.config.rateLimit.requests | quote }}
+  RATE_LIMIT_WINDOW_MS: {{ .Values.config.rateLimit.windowMs | quote }}
+  EMBEDDING_MODEL: {{ .Values.config.ai.embedding.model | quote }}
+  EMBEDDING_DIMENSIONS: {{ .Values.config.ai.embedding.dimensions | quote }}
+  REASONING_MODEL: {{ .Values.config.ai.reasoning.model | quote }}

@@ -1,0 +1,116 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ace-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ace}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ace_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-compliance_engine}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/db/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ace -d compliance_engine"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for BullMQ job queues
+  redis:
+    image: redis:7-alpine
+    container_name: ace-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Document parser worker (sandboxed)
+  parser-worker:
+    build:
+      context: .
+      dockerfile: infra/docker/parser.Dockerfile
+    container_name: ace-parser
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Main API server
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+    container_name: ace-api
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3000
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ace}:${POSTGRES_PASSWORD:-ace_dev_password}@postgres:5432/${POSTGRES_DB:-compliance_engine}
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY}
+      - REASONING_MODEL_API_KEY=${REASONING_MODEL_API_KEY}
+      - OIDC_ISSUER_URL=${OIDC_ISSUER_URL}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Background worker for embeddings and evaluations
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/worker.Dockerfile
+    container_name: ace-worker
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ace}:${POSTGRES_PASSWORD:-ace_dev_password}@postgres:5432/${POSTGRES_DB:-compliance_engine}
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY}
+      - REASONING_MODEL_API_KEY=${REASONING_MODEL_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:

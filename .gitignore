@@ -1,0 +1,34 @@
+# Environment variables — NEVER commit
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Logs
+*.log
+logs/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OpenClaw agent files
+.openclaw/
+
+# Testing artifacts
+coverage/
+
+# Docker volumes
+data/
