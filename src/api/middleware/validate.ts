@@ -1,80 +1,72 @@
-// src/api/middleware/rateLimiter.ts
-// Per-tenant rate limiting
+// src/api/middleware/validate.ts
+// Zod schema validation middleware for Fastify routes
 
-import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
-import fp from 'fastify-plugin';
-import { config } from '../../core/config.js';
+import type { FastifyRequest, FastifyReply } from 'fastify';
+import { ZodError, ZodSchema } from 'zod';
 import { AppError } from '../../core/errors.js';
 
-// Simple in-memory rate limiter (use Redis in production)
-interface RateLimitEntry {
-  count: number;
-  resetAt: number;
+/**
+ * Create a Fastify preHandler that validates request body against a Zod schema.
+ * Fail-closed: any validation error results in a 400 response.
+ */
+export function validateBody<T>(schema: ZodSchema<T>) {
+  return async function validateBodyHandler(request: FastifyRequest, _reply: FastifyReply): Promise<void> {
+    const result = schema.safeParse(request.body);
+    if (!result.success) {
+      const details = result.error.issues.map((i) => ({
+        path: i.path.join('.'),
+        message: i.message,
+      }));
+      throw new AppError('VALIDATION_ERROR', 'Request body validation failed', 400, true, { details });
+    }
+    // Replace the body with the validated output (strips extra keys)
+    request.body = result.data;
+  };
 }
 
-const rateLimitMap = new Map<string, RateLimitEntry>();
-
-function getRateLimitKey(request: FastifyRequest): string {
-  // Use tenant ID if authenticated, otherwise IP
-  const identifier = request.principal?.tenantId || request.ip;
-  return `ratelimit:${identifier}:${request.url}`;
+/**
+ * Create a Fastify preHandler that validates query parameters against a Zod schema.
+ */
+export function validateQuery<T>(schema: ZodSchema<T>) {
+  return async function validateQueryHandler(request: FastifyRequest, _reply: FastifyReply): Promise<void> {
+    const result = schema.safeParse(request.query);
+    if (!result.success) {
+      const details = result.error.issues.map((i) => ({
+        path: i.path.join('.'),
+        message: i.message,
+      }));
+      throw new AppError('VALIDATION_ERROR', 'Query parameter validation failed', 400, true, { details });
+    }
+    request.query = result.data as Record<string, unknown>;
+  };
 }
 
-function checkRateLimit(key: string): { allowed: boolean; resetIn?: number } {
-  const now = Date.now();
-  const windowMs = config.RATE_LIMIT_WINDOW_MS;
-  const maxRequests = config.RATE_LIMIT_REQUESTS;
-  
-  const entry = rateLimitMap.get(key);
-  
-  if (!entry || now > entry.resetAt) {
-    // New window
-    rateLimitMap.set(key, {
-      count: 1,
-      resetAt: now + windowMs,
-    });
-    return { allowed: true };
-  }
-  
-  if (entry.count >= maxRequests) {
-    // Rate limited
-    return {
-      allowed: false,
-      resetIn: Math.ceil((entry.resetAt - now) / 1000),
-    };
-  }
-  
-  // Increment and allow
-  entry.count++;
-  return { allowed: true };
+/**
+ * Create a Fastify preHandler that validates URL parameters against a Zod schema.
+ */
+export function validateParams<T>(schema: ZodSchema<T>) {
+  return async function validateParamsHandler(request: FastifyRequest, _reply: FastifyReply): Promise<void> {
+    const result = schema.safeParse(request.params);
+    if (!result.success) {
+      const details = result.error.issues.map((i) => ({
+        path: i.path.join('.'),
+        message: i.message,
+      }));
+      throw new AppError('VALIDATION_ERROR', 'Path parameter validation failed', 400, true, { details });
+    }
+    request.params = result.data as Record<string, unknown>;
+  };
 }
 
-export const rateLimiter: FastifyPluginAsync = fp(async (fastify) => {
-  fastify.addHook('onRequest', async (request, reply) => {
-    // Skip rate limiting for health checks
-    if (request.url.startsWith('/health')) {
-      return;
-    }
-    
-    const key = getRateLimitKey(request);
-    const result = checkRateLimit(key);
-    
-    // Set rate limit headers
-    reply.header('X-RateLimit-Limit', config.RATE_LIMIT_REQUESTS);
-    
-    if (!result.allowed) {
-      reply.header('X-RateLimit-Reset', result.resetIn);
-      throw new AppError(
-        'FORBIDDEN',
-        `Rate limit exceeded. Try again in ${result.resetIn} seconds.`,
-        429,
-      );
-    }
-    
-    // Set remaining count header
-    const entry = rateLimitMap.get(key);
-    if (entry) {
-      reply.header('X-RateLimit-Remaining', Math.max(0, config.RATE_LIMIT_REQUESTS - entry.count));
-    }
-  });
-});
+/**
+ * Format ZodError into a user-friendly error response.
+ * Useful when Zod errors are caught in route handlers directly.
+ */
+export function formatZodError(error: ZodError): { details: Array<{ path: string; message: string }> } {
+  return {
+    details: error.issues.map((i) => ({
+      path: i.path.join('.'),
+      message: i.message,
+    })),
+  };
+}

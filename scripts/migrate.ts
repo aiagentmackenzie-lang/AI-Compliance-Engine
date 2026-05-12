@@ -9,6 +9,7 @@ import { config } from 'dotenv';
 
 // Load env vars before anything else
 config();
+config({ path: '.env.test', override: false });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

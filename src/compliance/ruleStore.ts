@@ -257,22 +257,26 @@ export async function getActiveRules(
   tenantId: string,
   framework?: string,
 ): Promise<EngineRule[]> {
-  let sql = "SELECT * FROM engine_rules WHERE tenant_id = $1 AND status = 'ACTIVE'";
-  const params: (string | string[])[] = [tenantId];
-  let paramIndex = 1;
-
-  // Filter by framework if lineage contains framework info
   if (framework) {
-    paramIndex++;
-    sql += ` AND lineage->'documentIds' @> (
-      SELECT jsonb_agg(id) FROM compliance_documents 
-      WHERE tenant_id = $1 AND framework = $${paramIndex}
-    )`;
-    params.push(framework);
+    // Filter by framework in application code since lineage is a JSONB field
+    // and the subquery approach is fragile with NULL results
+    const result = await db.query<EngineRule>(
+      "SELECT * FROM engine_rules WHERE tenant_id = $1 AND status = 'ACTIVE' ORDER BY severity DESC, created_at ASC",
+      [tenantId]
+    );
+    // Filter by framework: check if any document in lineage.documentIds references this framework
+    return result.rows.filter(rule => {
+      const lineage = rule.lineage as { documentIds?: string[] } | undefined;
+      // If no lineage info, include the rule (conservative)
+      if (!lineage?.documentIds?.length) return true;
+      // Cross-reference: rules whose policyReference contains the framework
+      return rule.policyReference.toUpperCase().includes(framework.toUpperCase());
+    });
   }
 
-  sql += ' ORDER BY severity DESC, created_at ASC';
-
-  const result = await db.query<EngineRule>(sql, params);
+  const result = await db.query<EngineRule>(
+    "SELECT * FROM engine_rules WHERE tenant_id = $1 AND status = 'ACTIVE' ORDER BY severity DESC, created_at ASC",
+    [tenantId]
+  );
   return result.rows;
 }

@@ -1,10 +1,20 @@
 # Document parser worker Dockerfile - sandboxed, minimal privileges
-FROM node:20-alpine AS base
+# Multi-stage build to minimize attack surface
 
-RUN apk add --no-cache \
-    pdftotext \
-    poppler-utils \
-    && rm -rf /var/cache/apk/*
+# Build stage
+FROM node:20-alpine AS builder
+
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci && npm cache clean --force
+
+COPY . .
+RUN npm run build
+
+# Production stage
+FROM node:20-alpine AS runner
 
 WORKDIR /app
 
@@ -12,23 +22,20 @@ WORKDIR /app
 RUN addgroup -g 65534 -S parser && \
     adduser -u 65534 -S parser -G parser
 
-# Copy package files
+# Install only runtime dependencies
 COPY package*.json ./
 RUN npm ci --only=production && npm cache clean --force
 
-# Copy source and build
-COPY . .
-RUN npm run build
+# Copy built artifacts from builder
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package.json ./package.json
 
 # Configure security context
 USER parser:parser
 
-# Read-only root filesystem
+# Read-only root filesystem with tmp for processing
 ENV NODE_ENV=production
 ENV HOME=/tmp
-
-# No shell access
-SHELL ["/bin/sh", "-c"]
 
 WORKDIR /tmp
 

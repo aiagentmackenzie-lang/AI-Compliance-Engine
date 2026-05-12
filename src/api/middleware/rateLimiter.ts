@@ -65,9 +65,11 @@ export const rateLimiter: FastifyPluginAsync = fp(async (fastify) => {
     if (!result.allowed) {
       reply.header('X-RateLimit-Reset', result.resetIn);
       throw new AppError(
-        'FORBIDDEN',
+        'RATE_LIMITED',
         `Rate limit exceeded. Try again in ${result.resetIn} seconds.`,
         429,
+        true,
+        { resetIn: result.resetIn },
       );
     }
     

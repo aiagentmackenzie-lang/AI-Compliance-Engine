@@ -1,5 +1,5 @@
 // src/core/config.ts
-// Type-safe environment configuration — no raw process.env access
+// Type-safe environment configuration — no raw process.env access outside this module
 
 import { z } from 'zod';
 
@@ -8,6 +8,7 @@ const ConfigSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().transform(Number).default('3000'),
   HOST: z.string().default('0.0.0.0'),
+  BODY_LIMIT_BYTES: z.string().transform(Number).default('1048576'), // 1MB for JSON routes
   
   // Database
   DATABASE_URL: z.string().url(),
@@ -26,8 +27,11 @@ const ConfigSchema = z.object({
   EMBEDDING_API_KEY: z.string(),
   EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
   EMBEDDING_DIMENSIONS: z.string().transform(Number).default('1536'),
+  EMBEDDING_PROVIDER: z.enum(['openai', 'ollama']).default('openai'),
   REASONING_MODEL_API_KEY: z.string(),
   REASONING_MODEL: z.string().default('gpt-4o-2024-08-06'),
+  REASONING_PROVIDER: z.enum(['openai', 'ollama']).default('openai'),
+  OLLAMA_BASE_URL: z.string().default('http://localhost:11434'),
   
   // Rate limiting
   RATE_LIMIT_REQUESTS: z.string().transform(Number).default('100'),
@@ -38,11 +42,17 @@ const ConfigSchema = z.object({
   SIEM_WEBHOOK_URL: z.string().url().optional().or(z.literal('')),
   
   // Queue
-  REDIS_URL: z.string().url().default('redis://localhost:6379'),
+  REDIS_URL: z.string().default('redis://localhost:6379'),
   
   // File uploads
   MAX_FILE_SIZE_BYTES: z.string().transform(Number).default('52428800'), // 50MB
   ALLOWED_MIME_TYPES: z.string().default('application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+  
+  // Secrets Provider (env, vault, aws)
+  SECRETS_PROVIDER: z.enum(['env', 'vault', 'aws']).default('env'),
+  VAULT_ADDR: z.string().optional(),
+  VAULT_TOKEN: z.string().optional(),
+  AWS_REGION: z.string().default('us-east-1'),
 });
 
 type Config = z.infer<typeof ConfigSchema>;

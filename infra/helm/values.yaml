@@ -101,9 +101,11 @@ redis:
       enabled: true
       size: 5Gi
 
-# Secrets (use external secret management in production)
+# Secrets (use External Secrets Operator or Vault injection in production)
 secrets:
+  databaseUrl: ""
+  redisUrl: ""
   embeddingApiKey: ""
-  reasoningModelApiKey: ""
+  reasoningApiKey: ""
   jwtSecret: ""
   oidcClientSecret: ""

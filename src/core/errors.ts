@@ -7,6 +7,7 @@ export type ErrorCode =
   | 'NOT_FOUND'
   | 'UNAUTHORIZED'
   | 'FORBIDDEN'
+  | 'RATE_LIMITED'
   | 'INVALID_MIME_TYPE'
   | 'FILE_TOO_LARGE'
   | 'CHECKSUM_MISMATCH'
@@ -66,6 +67,9 @@ export const Errors = {
   
   forbidden: (message: string = 'Forbidden') =>
     new AppError('FORBIDDEN', message, 403, true),
+
+  rateLimited: (message: string, resetIn?: number) =>
+    new AppError('RATE_LIMITED', message, 429, true, resetIn !== undefined ? { resetIn } : undefined),
   
   database: (message: string, details?: Record<string, unknown>) =>
     new AppError('DATABASE_ERROR', message, 500, false, details),

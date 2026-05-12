@@ -1,5 +1,5 @@
 // src/api/routes/evaluations.ts
-// POST /evaluations, GET /evaluations/:id
+// POST /evaluations, GET /evaluations/:id, GET /evaluations
 
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -15,6 +15,7 @@ import { AppError } from '../../core/errors.js';
 import { writeAuditEvent } from '../../infra/audit.js';
 import { logger } from '../../core/logger.js';
 import { db } from '../../infra/db.js';
+import { queueEvaluation } from '../../infra/queue.js';
 import { requireSecurityEngineer, requireComplianceAuditor } from '../middleware/auth.js';
 
 const CreateEvaluationSchema = z.object({
@@ -22,6 +23,12 @@ const CreateEvaluationSchema = z.object({
   framework: z.string(),
   frameworkVersion: z.string(),
   systemState: SystemStateSchema,
+});
+
+const ListEvaluationsQuerySchema = z.object({
+  status: z.enum(['PENDING', 'IN_PROGRESS', 'COMPLETED', 'FAILED']).optional(),
+  limit: z.string().transform(Number).default('20'),
+  offset: z.string().transform(Number).default('0'),
 });
 
 export async function evaluationsRoutes(fastify: FastifyInstance): Promise<void> {
@@ -52,23 +59,38 @@ export async function evaluationsRoutes(fastify: FastifyInstance): Promise<void>
       metadata: { systemId: body.systemId, framework: body.framework },
     });
     
-    // Run evaluation asynchronously
-    setImmediate(async () => {
-      try {
-        await runEvaluation(evaluationId, principal, body);
-      } catch (err) {
-        logger.error({ err, evaluationId }, 'Evaluation failed');
-        
-        await db.query(
-          'UPDATE evaluations SET status = $1 WHERE id = $2',
-          ['FAILED', evaluationId]
-        );
-      }
-    });
+    // Run evaluation via BullMQ queue (replaces setImmediate)
+    try {
+      await queueEvaluation({
+        evaluationId,
+        tenantId: principal.tenantId,
+        systemId: body.systemId,
+        framework: body.framework,
+        principalId: principal.id,
+        correlationId: principal.correlationId,
+      });
+      
+      logger.info({ evaluationId }, 'Evaluation queued');
+    } catch (err) {
+      // If queueing fails, fall back to inline processing with error handling
+      logger.warn({ err, evaluationId }, 'Queue unavailable, processing inline');
+      
+      setImmediate(async () => {
+        try {
+          await runEvaluation(evaluationId, principal, body);
+        } catch (processErr) {
+          logger.error({ err: processErr, evaluationId }, 'Evaluation failed (inline)');
+          await db.query(
+            'UPDATE evaluations SET status = $1 WHERE id = $2',
+            ['FAILED', evaluationId]
+          );
+        }
+      });
+    }
     
     return reply.status(202).send({
       evaluationId,
-      status: 'IN_PROGRESS',
+      status: 'PENDING',
       estimatedCompletionSeconds: 45,
     });
   });
@@ -104,35 +126,43 @@ export async function evaluationsRoutes(fastify: FastifyInstance): Promise<void>
     });
   });
 
-  // GET /evaluations - List evaluations
+  // GET /evaluations - List evaluations with pagination
   fastify.get('/', {
     preHandler: [requireComplianceAuditor],
   }, async (request, reply) => {
     const { principal } = request;
-    const { status, limit = '20', offset = '0' } = request.query as { 
-      status?: string; 
-      limit?: string; 
-      offset?: string;
-    };
+    const query = ListEvaluationsQuerySchema.parse(request.query);
     
     let sql = 'SELECT * FROM evaluations WHERE tenant_id = $1';
     const params: (string | number)[] = [principal.tenantId];
     let paramIndex = 1;
     
-    if (status) {
+    if (query.status) {
       paramIndex++;
       sql += ` AND status = $${paramIndex}`;
-      params.push(status);
+      params.push(query.status);
     }
     
-    sql += ` ORDER BY created_at DESC LIMIT $${++paramIndex} OFFSET $${++paramIndex}`;
-    params.push(parseInt(limit, 10), parseInt(offset, 10));
+    // Get total count
+    const countSql = `SELECT COUNT(*) FROM (${sql}) AS filtered`;
+    const countResult = await db.query<{ count: string }>(countSql, params);
+    const total = parseInt(countResult.rows[0]?.count ?? '0', 10);
+    
+    // Add pagination
+    paramIndex++;
+    sql += ` ORDER BY created_at DESC LIMIT $${paramIndex}`;
+    params.push(query.limit);
+    paramIndex++;
+    sql += ` OFFSET $${paramIndex}`;
+    params.push(query.offset);
     
     const result = await db.query(sql, params);
     
     return reply.send({
       evaluations: result.rows,
-      total: result.rowCount,
+      total,
+      limit: query.limit,
+      offset: query.offset,
     });
   });
 }

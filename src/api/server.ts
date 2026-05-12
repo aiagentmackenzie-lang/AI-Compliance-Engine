@@ -2,6 +2,7 @@
 // Fastify app bootstrap
 
 import Fastify from 'fastify';
+import cors from '@fastify/cors';
 import { config } from '../core/config.js';
 import { logger } from '../core/logger.js';
 import { fastifyErrorHandler } from '../core/errors.js';
@@ -21,10 +22,19 @@ export async function buildServer() {
   const app = Fastify({
     logger: config.NODE_ENV === 'development',
     trustProxy: true,
+    bodyLimit: 1048576, // 1MB default body limit for JSON routes
   });
 
   // Register error handler
   app.setErrorHandler(fastifyErrorHandler);
+
+  // Register CORS
+  await app.register(cors, {
+    origin: config.NODE_ENV === 'production' ? false : true, // Configure per-deployment
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-ID', 'X-Tenant-ID'],
+  });
 
   // Register request logging (adds correlation ID)
   app.addHook('onRequest', requestLogger);

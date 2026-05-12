@@ -42,9 +42,9 @@ describe('Tenant Isolation', () => {
     await closeDatabase();
   });
 
-  it('should not return documents from other tenants', async () => {
+  it('should not return documents from other tenants', async ({ skip }) => {
     if (!dbAvailable) {
-      console.warn('Skipping test - database not available');
+      skip('Database not available for integration tests');
       return;
     }
     

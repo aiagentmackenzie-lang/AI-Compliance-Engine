@@ -1,5 +1,5 @@
 // src/api/routes/documents.ts
-// POST /documents, GET /documents/:id
+// POST /documents, GET /documents, GET /documents/:id
 
 import type { FastifyInstance } from 'fastify';
 import multipart from '@fastify/multipart';
@@ -12,6 +12,7 @@ import { AppError } from '../../core/errors.js';
 import { writeAuditEvent } from '../../infra/audit.js';
 import { logger } from '../../core/logger.js';
 import { db } from '../../infra/db.js';
+import { queueDocumentProcessing } from '../../infra/queue.js';
 import { requireSecurityEngineer } from '../middleware/auth.js';
 
 const UploadDocumentSchema = z.object({
@@ -28,6 +29,12 @@ const UploadDocumentSchema = z.object({
   frameworkVersion: z.string().max(64),
   title: z.string().min(1).max(512),
   checksum: z.string().length(64), // SHA-256 hex
+});
+
+const ListDocumentsQuerySchema = z.object({
+  framework: z.string().optional(),
+  limit: z.string().transform(Number).default('50'),
+  offset: z.string().transform(Number).default('0'),
 });
 
 export async function documentsRoutes(fastify: FastifyInstance): Promise<void> {
@@ -111,9 +118,22 @@ export async function documentsRoutes(fastify: FastifyInstance): Promise<void> {
       metadata: { size: fileBuffer.length, mimeType },
     });
     
-    // Parse document in background
-    // Note: In production, this should be queued via BullMQ
-    setImmediate(async () => {
+    // Queue document processing via BullMQ (replaces setImmediate)
+    try {
+      await queueDocumentProcessing({
+        documentId: document.id,
+        tenantId: principal.tenantId,
+        filePath: document.sourcePath,
+        mimeType,
+        principalId: principal.id,
+        correlationId: principal.correlationId,
+      });
+      
+      logger.info({ documentId: document.id }, 'Document processing queued');
+    } catch (err) {
+      // If queueing fails, fall back to inline processing with error logging
+      logger.warn({ err, documentId: document.id }, 'Queue unavailable, processing inline');
+      
       try {
         const chunks = await parseDocument(document, fileBuffer!, mimeType, {
           principal: {
@@ -123,14 +143,12 @@ export async function documentsRoutes(fastify: FastifyInstance): Promise<void> {
           },
         });
         
-        // Generate embeddings and index
         await embedAndIndexChunks(chunks, principal.correlationId);
-        
-        logger.info({ documentId: document.id, chunkCount: chunks.length }, 'Document processed');
-      } catch (err) {
-        logger.error({ err, documentId: document.id }, 'Failed to process document');
+        logger.info({ documentId: document.id, chunkCount: chunks.length }, 'Document processed inline');
+      } catch (processErr) {
+        logger.error({ err: processErr, documentId: document.id }, 'Failed to process document inline');
       }
-    });
+    }
     
     return reply.status(202).send({
       documentId: document.id,
@@ -158,28 +176,45 @@ export async function documentsRoutes(fastify: FastifyInstance): Promise<void> {
     return reply.send(result.rows[0]);
   });
 
-  // GET /documents - List documents
+  // GET /documents - List documents with pagination
   fastify.get('/', {
     preHandler: [requireSecurityEngineer],
   }, async (request, reply) => {
     const { principal } = request;
-    const { framework } = request.query as { framework?: string };
+    const query = ListDocumentsQuerySchema.parse(request.query);
     
     let sql = 'SELECT * FROM compliance_documents WHERE tenant_id = $1';
-    const params: (string | string[])[] = [principal.tenantId];
+    const params: (string | number)[] = [principal.tenantId];
+    let paramIndex = 1;
     
-    if (framework) {
-      sql += ' AND framework = $2';
-      params.push(framework);
+    if (query.framework) {
+      paramIndex++;
+      sql += ` AND framework = $${paramIndex}`;
+      params.push(query.framework);
     }
     
-    sql += ' ORDER BY created_at DESC';
+    // Get total count
+    const countResult = await db.query<{ count: string }>(
+      `SELECT COUNT(*) FROM (${sql}) AS filtered`,
+      params
+    );
+    const total = parseInt(countResult.rows[0]?.count ?? '0', 10);
+    
+    // Add pagination
+    paramIndex++;
+    sql += ` ORDER BY created_at DESC LIMIT $${paramIndex}`;
+    params.push(query.limit);
+    paramIndex++;
+    sql += ` OFFSET $${paramIndex}`;
+    params.push(query.offset);
     
     const result = await db.query<ComplianceDocument>(sql, params);
     
     return reply.send({
       documents: result.rows,
-      total: result.rowCount,
+      total,
+      limit: query.limit,
+      offset: query.offset,
     });
   });
 }

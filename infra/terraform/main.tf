@@ -117,7 +117,8 @@ resource "aws_db_instance" "postgres" {
   backup_window          = "03:00-04:00"
   maintenance_window     = "Mon:04:00-Mon:05:00"
 
-  skip_final_snapshot = true
+  skip_final_snapshot = false
+  final_snapshot_identifier = "${var.cluster_name}-postgres-final-snapshot"
 
   tags = {
     Environment = var.environment

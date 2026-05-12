@@ -2,12 +2,20 @@
 // Worker thread for document parsing (isolated from main process)
 
 import { parentPort, workerData } from 'node:worker_threads';
-import { PDFParse } from 'pdf-parse';
 import mammoth from 'mammoth';
 
 interface WorkerData {
   buffer: string; // base64 encoded
   mimeType: string;
+}
+
+// pdf-parse doesn't have proper ESM types, so we use a dynamic import
+// and fall back to require for CJS compatibility
+async function parsePdf(fileBuffer: Buffer): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const pdfParse = require('pdf-parse');
+  const data = await pdfParse(fileBuffer);
+  return data.text;
 }
 
 async function extractText(): Promise<void> {
@@ -23,16 +31,14 @@ async function extractText(): Promise<void> {
 
     switch (mimeType) {
       case 'application/pdf': {
-        const parser = new PDFParse({ data: fileBuffer });
-        const textResult = await parser.getText();
-        text = textResult.text;
-        await parser.destroy();
+        text = await parsePdf(fileBuffer);
         break;
       }
-      case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+      case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': {
         const docxResult = await mammoth.extractRawText({ buffer: fileBuffer });
         text = docxResult.value;
         break;
+      }
       default:
         throw new Error(`Unsupported MIME type: ${mimeType}`);
     }

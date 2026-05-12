@@ -28,11 +28,13 @@
   "author": "Raphael",
   "license": "ISC",
   "dependencies": {
+    "@fastify/cors": "^11.2.0",
     "@fastify/multipart": "^10.0.0",
     "@fastify/swagger": "^9.5.0",
     "@fastify/swagger-ui": "^5.2.2",
     "bullmq": "^5.47.0",
     "fastify": "^5.2.2",
+    "jose": "^6.2.3",
     "mammoth": "^1.12.0",
     "pdf-parse": "^2.4.5",
     "pg": "^8.14.1",

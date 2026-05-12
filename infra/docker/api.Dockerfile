@@ -27,6 +27,9 @@ ENV PORT=3000
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 ace
 
+# Install wget for health checks
+RUN apk add --no-cache wget
+
 # Copy only necessary files
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist

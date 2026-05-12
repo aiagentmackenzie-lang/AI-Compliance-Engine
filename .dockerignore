@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.git/
+.github/
+.openclaw/
+.env
+.env.*
+!.env.example
+coverage/
+logs/
+*.md
+!README.md
+tests/
+scripts/
+infra/terraform/
+infra/helm/
+infra/db/
