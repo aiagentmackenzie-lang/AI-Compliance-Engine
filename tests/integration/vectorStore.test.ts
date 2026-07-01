@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { db, closeDatabase } from '../../src/infra/db.js';
-import { vectorStore } from '../../src/infra/vectorStore.js';
 
 describe('Tenant Isolation', () => {
   const tenantA = '550e8400-e29b-41d4-a716-446655440001';
@@ -23,8 +22,7 @@ describe('Tenant Isolation', () => {
         'INSERT INTO compliance_documents (id, tenant_id, title, framework, framework_version, source_path, checksum, created_at, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8) ON CONFLICT DO NOTHING',
         ['doc-b-1', tenantB, 'Test Doc B', 'CIS_AWS', '1.0', '/test', 'hash', 'user-b']
       );
-    } catch (err) {
-      console.warn('Database not available for integration tests:', err);
+    } catch {
       dbAvailable = false;
     }
   });

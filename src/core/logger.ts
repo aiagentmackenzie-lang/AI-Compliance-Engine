@@ -2,7 +2,7 @@
 // Structured JSON logging with Pino
 
 import pino from 'pino';
-import { config } from './config';
+import { config } from './config.js';
 
 // Redaction patterns for sensitive data
 const REDACT_PATHS = [

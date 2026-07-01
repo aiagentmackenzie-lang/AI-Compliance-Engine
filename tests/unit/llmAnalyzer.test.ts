@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import { analyzeCompliance } from '../../src/ai/llmAnalyzer.js';
-import { AiAnalysisResult } from '../../src/ai/types.js';
 import * as auditModule from '../../src/infra/audit.js';
 
 describe('LLM Analyzer', () => {
